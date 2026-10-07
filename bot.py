@@ -1,4 +1,3 @@
-from multiprocessing.util import info
 import os
 
 import discord
@@ -40,7 +39,6 @@ async def ping(interaction: discord.Interaction):
 @bot.tree.command(name="join", description="Join your voice channel")
 async def join(interaction: discord.Interaction):
 
-    # Check if the user is in a voice channel
     if not interaction.user.voice:
         await interaction.response.send_message(
             "❌ You need to join a voice channel first."
@@ -49,7 +47,6 @@ async def join(interaction: discord.Interaction):
 
     voice_channel = interaction.user.voice.channel
 
-    # Check if the bot is already connected
     if interaction.guild.voice_client:
         await interaction.guild.voice_client.move_to(voice_channel)
     else:
@@ -59,15 +56,21 @@ async def join(interaction: discord.Interaction):
         f"🎵 Joined **{voice_channel.name}**!"
     )
 
+
 def play_next(voice_client, error=None):
 
     if error:
         print(f"Playback error: {error}")
 
+    print("▶️ play_next() called")
+
     if not music_queue:
+        print("📭 Queue is empty")
         return
 
     next_song = music_queue.pop(0)
+
+    print(f"🎵 Starting next song: {next_song['title']}")
 
     ydl_opts = {
         "format": "bestaudio/best",
@@ -76,7 +79,10 @@ def play_next(voice_client, error=None):
     }
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        info = ydl.extract_info(next_song["webpage_url"], download=False)
+        info = ydl.extract_info(
+            next_song["webpage_url"],
+            download=False
+        )
 
     audio_url = info["url"]
 
@@ -87,8 +93,9 @@ def play_next(voice_client, error=None):
         after=lambda error: play_next(voice_client, error)
     )
 
+
 @bot.tree.command(name="play", description="Search and play a song")
-async def play(interaction: discord.Interaction, song: str):
+async def play(interaction: discord.Interaction, query: str):
 
     await interaction.response.defer()
 
@@ -113,26 +120,33 @@ async def play(interaction: discord.Interaction, song: str):
     }
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        info = ydl.extract_info(song, download=False)
+        info = ydl.extract_info(
+            f"ytsearch1:{query}",
+            download=False
+        )
 
-    if "entries" in info:
-        info = info["entries"][0]
+    if not info["entries"]:
+        await interaction.followup.send(
+            "❌ No results found."
+        )
+        return
 
-    title = info.get("title", "Unknown")
-    audio_url = info["url"]
+    song = info["entries"][0]
 
     song_info = {
-        "title": title,
-        "webpage_url": info["webpage_url"]
+        "title": song["title"],
+        "webpage_url": song["webpage_url"]
     }
 
     if voice_client.is_playing():
         music_queue.append(song_info)
 
         await interaction.followup.send(
-            f"➕ Added to queue: **{title}**"
+            f"➕ Added **{song['title']}** to the queue."
         )
         return
+
+    audio_url = song["url"]
 
     audio_source = discord.FFmpegPCMAudio(audio_url)
 
@@ -142,8 +156,9 @@ async def play(interaction: discord.Interaction, song: str):
     )
 
     await interaction.followup.send(
-        f"🎵 Now playing: **{title}**"
+        f"🎵 Now playing: **{song['title']}**"
     )
+
 
 @bot.tree.command(name="queue", description="Show the current music queue")
 async def queue(interaction: discord.Interaction):
