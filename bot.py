@@ -1,3 +1,4 @@
+from multiprocessing.util import info
 import os
 
 import discord
@@ -58,18 +59,32 @@ async def join(interaction: discord.Interaction):
         f"🎵 Joined **{voice_channel.name}**!"
     )
 
-def play_next(voice_client):
+def play_next(voice_client, error=None):
+
+    if error:
+        print(f"Playback error: {error}")
 
     if not music_queue:
         return
 
     next_song = music_queue.pop(0)
 
-    audio_source = discord.FFmpegPCMAudio(next_song["url"])
+    ydl_opts = {
+        "format": "bestaudio/best",
+        "quiet": True,
+        "noplaylist": True,
+    }
+
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        info = ydl.extract_info(next_song["webpage_url"], download=False)
+
+    audio_url = info["url"]
+
+    audio_source = discord.FFmpegPCMAudio(audio_url)
 
     voice_client.play(
         audio_source,
-        after=lambda error: play_next(voice_client)
+        after=lambda error: play_next(voice_client, error)
     )
 
 @bot.tree.command(name="play", description="Search and play a song")
@@ -77,7 +92,6 @@ async def play(interaction: discord.Interaction, song: str):
 
     await interaction.response.defer()
 
-    # Make sure the user is in a voice channel
     if not interaction.user.voice:
         await interaction.followup.send(
             "❌ You need to join a voice channel first."
@@ -86,7 +100,6 @@ async def play(interaction: discord.Interaction, song: str):
 
     voice_channel = interaction.user.voice.channel
 
-    # Connect the bot if it isn't already connected
     if interaction.guild.voice_client:
         voice_client = interaction.guild.voice_client
     else:
@@ -108,13 +121,11 @@ async def play(interaction: discord.Interaction, song: str):
     title = info.get("title", "Unknown")
     audio_url = info["url"]
 
-    # Create a song object
     song_info = {
         "title": title,
-        "url": audio_url
+        "webpage_url": info["webpage_url"]
     }
 
-    # If something is already playing, add the new song to the queue
     if voice_client.is_playing():
         music_queue.append(song_info)
 
@@ -123,12 +134,11 @@ async def play(interaction: discord.Interaction, song: str):
         )
         return
 
-    # Otherwise, play the song immediately
     audio_source = discord.FFmpegPCMAudio(audio_url)
 
     voice_client.play(
         audio_source,
-        after=lambda error: play_next(voice_client)
+        after=lambda error: play_next(voice_client, error)
     )
 
     await interaction.followup.send(
